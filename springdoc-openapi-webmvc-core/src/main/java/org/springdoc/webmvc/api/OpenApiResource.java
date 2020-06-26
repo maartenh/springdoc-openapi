@@ -35,6 +35,7 @@ import io.swagger.v3.core.util.PathUtils;
 import io.swagger.v3.core.util.Yaml;
 import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.models.OpenAPI;
+import org.apache.commons.lang3.StringUtils;
 import org.springdoc.api.AbstractOpenApiResource;
 import org.springdoc.core.AbstractRequestBuilder;
 import org.springdoc.core.ActuatorProvider;
@@ -71,6 +72,7 @@ import static org.springframework.util.AntPathMatcher.DEFAULT_PATH_SEPARATOR;
 /**
  * The type Open api resource.
  * @author bnasslahsen
+ * @author maartenh
  */
 @RestController
 public class OpenApiResource extends AbstractOpenApiResource {
@@ -288,8 +290,59 @@ public class OpenApiResource extends AbstractOpenApiResource {
 	 * @param apiDocsUrl the api docs url
 	 */
 	protected void calculateServerUrl(HttpServletRequest request, String apiDocsUrl) {
-		String requestUrl = decode(request.getRequestURL().toString());
-		String calculatedUrl = requestUrl.substring(0, requestUrl.length() - apiDocsUrl.length());
+		String requestUri = decode(request.getRequestURI());
+		String calculatedUri = requestUri.substring(0, requestUri.length() - apiDocsUrl.length());
+
+		String calculatedScheme = request.getScheme();
+		String calculatedHost = request.getServerName();
+		String calculatedPort = String.valueOf(request.getServerPort());
+
+		String forwardedProto = request.getHeader("x-forwarded-proto");
+		String forwardedHost = request.getHeader("x-forwarded-host");
+		String forwardedPort = request.getHeader("x-forwarded-port");
+
+		String forwardedHeader = request.getHeader("forwarded");
+		if (forwardedHeader != null) {
+			String[] parts = forwardedHeader.split(";");
+			for (String part : parts) {
+				if (part.startsWith("proto=")) {
+					forwardedProto = part.substring(6);
+				}
+				if (part.startsWith("host=")) {
+					forwardedHost = part.substring(5);
+				}
+				if (part.startsWith("port=")) {
+					forwardedPort = part.substring(5);
+				}
+			}
+		}
+
+		if (!StringUtils.isEmpty(forwardedProto)) {
+			calculatedScheme = forwardedProto;
+		}
+
+		if (!StringUtils.isEmpty(forwardedHost)) {
+			int colonPosition = forwardedHost.indexOf(':');
+			if (colonPosition > 0) {
+				calculatedPort = forwardedHost.substring(colonPosition + 1);
+				calculatedHost = forwardedHost.substring(0, colonPosition);
+			} else {
+				calculatedHost = forwardedHost;
+			}
+		}
+
+		if (!StringUtils.isEmpty(forwardedPort)) {
+			calculatedPort = forwardedPort;
+		}
+
+		if ("http".equals(calculatedScheme) && "80".equals(calculatedPort)
+				|| "https".equals(calculatedScheme) && "443".equals(calculatedPort)) {
+			calculatedPort = "";
+		} else {
+			calculatedPort = ":" + calculatedPort;
+		}
+
+		String calculatedUrl = calculatedScheme + "://" + calculatedHost + calculatedPort + calculatedUri;
 		openAPIBuilder.setServerBaseUrl(calculatedUrl);
 	}
 }
